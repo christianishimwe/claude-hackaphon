@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+weaviate-client==4.*
+pypdf
+python-multipart
+anthropic
+python-dotenv
