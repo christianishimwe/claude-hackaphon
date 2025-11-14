@@ -39,3 +39,16 @@ def split_into_cases(text: str) -> List[Dict]:
         cases.append({"title": title, "body": body})
 
     return cases
+
+
+def _extract_section(body: str, heading: str) -> str:
+    """
+    Extract text after a heading like 'Forbidden Words'
+    until the next heading (starting with a capital letter and a colon)
+    or the end of the body.
+    """
+    pattern = rf"{heading}\s*(.*?)(?=\n[A-Z][A-Za-z ]+?:|\Z)"
+    match = re.search(pattern, body, flags=re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return ""
