@@ -215,6 +215,33 @@ def retrieve_best_case(case_description: str) -> Optional[Dict]:
     }
 
 
+def retrieve_relevant_rules(query: str, k: int = 2) -> List[Dict]:
+    """
+    Retrieve top-k relevant rule objects from Weaviate for a general question.
+    Returns a list of dicts with case_name and raw_text.
+    """
+    ensure_schema()
+    coll = client.collections.get(COLLECTION_NAME)
+
+    result = coll.query.near_text(
+        query=query,
+        limit=max(1, k),
+    )
+
+    rules: List[Dict] = []
+    if not result.objects:
+        return rules
+
+    for obj in result.objects:
+        rules.append(
+            {
+                "case_name": obj.properties.get("case_name", ""),
+                "raw_text": obj.properties.get("raw_text", ""),
+            }
+        )
+    return rules
+
+
 def generate_apology(case_description: str, wrongdoing: str) -> str:
     case_info = retrieve_best_case(case_description)
 
@@ -267,3 +294,49 @@ that follows the above rules.
             apology += block.text
 
     return apology.strip()
+
+
+def answer_rule_question(query: str, top_k: int = 2) -> str:
+    """
+    Retrieve the most relevant rules and ask Claude to explain them
+    in response to the user's question. Does not generate an apology.
+    """
+    matches = retrieve_relevant_rules(query, k=top_k)
+
+    if not matches:
+        return (
+            "I couldn't find any rules related to that question. "
+            "Try rephrasing or upload the rulebook again."
+        )
+
+    combined_rules = "\n\n".join(
+        f"{m['case_name']}\n{m['raw_text']}" for m in matches if m.get("raw_text")
+    )
+
+    system_prompt = (
+        "You are an expert assistant who explains the 'girlfriend rulebook' clearly and gently. "
+        "Answer the user's question using only the provided rules text. "
+        "Be supportive, concise, and avoid inventing additional rules. "
+        "When helpful, cite specific phrases or bullets from the rules."
+    )
+
+    user_content = f"""User question:
+{query}
+
+Relevant rule text (do not reveal this raw text verbatim, summarize it):
+\"\"\"{combined_rules}\"\"\"
+
+Explain the relevant rule(s) and guidance in 3–6 sentences. Avoid writing an apology; just explain the rules and tone."""
+
+    resp = anthropic_client.messages.create(
+        model="claude-3-5-sonnet-latest",
+        system=system_prompt,
+        max_tokens=400,
+        messages=[{"role": "user", "content": user_content}],
+    )
+
+    answer = ""
+    for block in resp.content:
+        if block.type == "text":
+            answer += block.text
+    return answer.strip()
